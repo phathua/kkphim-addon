@@ -1,0 +1,7 @@
+name = "kkphim-stremio-addon"
+main = "src/index.ts"
+compatibility_date = "2024-02-22"
+
+[vars]
+KKPHIM_API_BASE = "https://phimapi.com"
+KKPHIM_IMG_BASE = "https://phimimg.com"
