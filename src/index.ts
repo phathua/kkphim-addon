@@ -16,85 +16,125 @@ const META_CACHE_TTL = 3600000 // 1 hour
 // Mapping cache
 const imdbCache = new Map<string, string>()
 
+function decodeHtml(text: string): string {
+    return text
+        .replace(/&#039;/g, "'")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\u00a0/g, ' ') // non-breaking space
+}
+
 async function getSlugFromImdb(imdbId: string, type: string, season?: number): Promise<string | null> {
     const cacheKey = (type === 'series' && season) ? `${imdbId}:${season}` : imdbId
     if (imdbCache.has(cacheKey)) return imdbCache.get(cacheKey)!
 
     try {
-        console.log(`[Mapping] Finding KKPhim slug for IMDB: ${imdbId} (${type}, S${season || 1})`)
+        console.log(`[Mapping] Starting for ${imdbId} (${type}, S${season || 1})`)
 
-        // 1. Get info from Cinemeta to get TMDB ID and names
-        const cinemetaRes = await fetch(`https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`)
-        const cinemetaData: any = await cinemetaRes.json()
+        // 1. Get info from Cinemeta (fallback endpoints)
+        let cinemetaData: any = null
+        const cinemetaUrls = [
+            `https://cinemeta-live.strem.io/meta/${type}/${imdbId}.json`,
+            `https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`
+        ]
+
+        for (const url of cinemetaUrls) {
+            try {
+                const res = await fetch(url)
+                const data = await res.json()
+                if (data?.meta?.name) {
+                    cinemetaData = data
+                    break
+                }
+            } catch (e) { }
+        }
+
         const cinemeta = cinemetaData?.meta
-        if (!cinemeta) return null
+        if (!cinemeta) {
+            console.warn(`[Mapping] Cinemeta meta not found for ${imdbId}`)
+            return null
+        }
 
         const tmdbId = cinemeta.moviedb_id
         const year = cinemeta.releaseInfo ? parseInt(cinemeta.releaseInfo) : null
         const name = cinemeta.name
+        console.log(`[Mapping] Info: Name="${name}", Year=${year}, TMDB=${tmdbId}`)
 
-        // 2. Try KKPhim TMDB endpoint (Most accurate)
+        // 2. Try KKPhim TMDB endpoint
         if (tmdbId) {
             const kkType = type === 'series' ? 'tv' : 'movie'
-            const tmdbRes = await fetch(`${API_BASE}/tmdb/${kkType}/${tmdbId}`)
+            const tmdbUrl = `${API_BASE}/tmdb/${kkType}/${tmdbId}`
+            console.log(`[Mapping] Checking KKPhim TMDB: ${tmdbUrl}`)
+
+            const tmdbRes = await fetch(tmdbUrl)
             const tmdbData: any = await tmdbRes.json()
             if (tmdbData.status && tmdbData.movie?.slug) {
-                console.log(`[Mapping] TMDB Match: ${tmdbData.movie.slug}`)
+                console.log(`[Mapping] SUCCESS (TMDB Match): ${tmdbData.movie.slug}`)
                 imdbCache.set(cacheKey, tmdbData.movie.slug)
                 return tmdbData.movie.slug
             }
         }
 
         // 3. Fallback: Search by title
-        console.log(`[Mapping] Falling back to search for: ${name}`)
-        const searchRes = await fetch(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(name)}`)
-        const searchData: any = await searchRes.json()
-        const items = searchData.data?.items || []
+        const searchKeywords = [
+            name,
+            name.split(':')[0],
+            name.split(' (')[0].split(' - ')[0]
+        ].filter((v, i, a) => a.indexOf(v) === i)
 
-        for (const item of items) {
-            const itemOriginLower = (item.origin_name || '').toLowerCase()
-            const itemNameLower = (item.name || '').toLowerCase()
-            const targetLower = name.toLowerCase()
+        for (const kw of searchKeywords) {
+            console.log(`[Mapping] Trying search: "${kw}"`)
+            const searchRes = await fetch(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(kw)}`)
+            const searchData: any = await searchRes.json()
+            const items = searchData.data?.items || []
 
-            const nameMatch = itemOriginLower === targetLower || itemNameLower === targetLower ||
-                itemOriginLower.includes(targetLower) || targetLower.includes(itemOriginLower)
+            for (const item of items) {
+                const itemOrigin = decodeHtml(item.origin_name || '').toLowerCase()
+                const itemName = decodeHtml(item.name || '').toLowerCase()
+                const targetTitle = name.toLowerCase()
 
-            const yearMatch = !year || item.year === year || item.year === year - 1 || item.year === year + 1
+                const nameMatch = itemOrigin === targetTitle || itemName === targetTitle ||
+                    itemOrigin.includes(targetTitle) || targetTitle.includes(itemOrigin)
 
-            if (yearMatch && nameMatch) {
-                if (type === 'series' && season) {
-                    const sStr = season.toString()
-                    if (itemNameLower.includes(`phần ${sStr}`) || itemNameLower.includes(`season ${sStr}`) || itemNameLower.includes(` s${sStr}`)) {
-                        console.log(`[Mapping] Search Match Found (Series S${sStr}): ${item.slug}`)
+                const yearMatch = !year || item.year === year || item.year === year - 1 || item.year === year + 1
+
+                if (yearMatch && nameMatch) {
+                    if (type === 'series' && season) {
+                        const sStr = season.toString()
+                        const hasSeason = itemName.includes(`phần ${sStr}`) ||
+                            itemName.includes(`season ${sStr}`) ||
+                            itemName.includes(` s${sStr}`) ||
+                            (season === 1 && !itemName.includes('phần ') && !itemName.includes('season '))
+
+                        if (hasSeason) {
+                            console.log(`[Mapping] SUCCESS (Search Match S${sStr}): ${item.slug}`)
+                            imdbCache.set(cacheKey, item.slug)
+                            return item.slug
+                        }
+                    } else {
+                        console.log(`[Mapping] SUCCESS (Search Match): ${item.slug}`)
                         imdbCache.set(cacheKey, item.slug)
                         return item.slug
                     }
-                } else {
-                    console.log(`[Mapping] Search Match Found: ${item.slug}`)
-                    imdbCache.set(cacheKey, item.slug)
-                    return item.slug
                 }
             }
         }
 
-        // 4. Final attempt: Try searching with a broader keyword if no items found
-        if (items.length === 0 && name.includes(':')) {
-            const broadName = name.split(':')[0]
-            console.log(`[Mapping] Retrying with broad name: ${broadName}`)
-            const retryRes = await fetch(`${API_BASE}/v1/api/tim-kiem?keyword=${encodeURIComponent(broadName)}`)
-            const retryData: any = await retryRes.json()
-            const retryItems = retryData.data?.items || []
-            if (retryItems.length > 0) {
-                console.log(`[Mapping] Broad Match Found: ${retryItems[0].slug}`)
-                imdbCache.set(cacheKey, retryItems[0].slug)
-                return retryItems[0].slug
-            }
+        // 4. Fallback search by IMDb ID directly
+        const idSearchRes = await fetch(`${API_BASE}/v1/api/tim-kiem?keyword=${imdbId}`)
+        const idSearchData: any = await idSearchRes.json()
+        if (idSearchData.data?.items?.length > 0) {
+            const first = idSearchData.data.items[0]
+            console.log(`[Mapping] SUCCESS (IMDb ID Match): ${first.slug}`)
+            imdbCache.set(cacheKey, first.slug)
+            return first.slug
         }
 
-        console.log(`[Mapping] No match found for ${imdbId} (${name})`)
-
+        console.log(`[Mapping] FAILED: No match found for ${imdbId} (${name})`)
     } catch (e) {
-        console.error(`[Mapping] Error mapping IMDB ${imdbId}:`, e)
+        console.error(`[Mapping] System Error:`, e)
     }
     return null
 }
