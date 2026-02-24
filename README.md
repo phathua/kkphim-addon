@@ -30,5 +30,5 @@ npm run deploy
 
 ### Lưu ý khi phát triển
 - Chạy `npm run dev` để test local.
-- Link local manifest sẽ là: `http://localhost:8787/manifest.json`.
+- Link local manifest sẽ là: `http://localhost:8788/manifest.json`.
 - Bạn có thể dán link local này vào Stremio Desktop để test nhanh.
