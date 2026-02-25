@@ -2,9 +2,11 @@ import { GENRES, COUNTRIES, ensureMetadata, ADDON_ID, ADDON_LOGO } from './utils
 
 export async function getManifest() {
     await ensureMetadata()
+    const years = Array.from({ length: 26 }, (_, i) => (2026 - i).toString())
     const EXTRA_CATALOG = [
         { name: 'genre', options: GENRES.map(g => g.name), isRequired: false },
         { name: 'country', options: COUNTRIES.map(c => c.name), isRequired: false },
+        { name: 'year', options: years, isRequired: false },
         { name: 'skip', isRequired: false }
     ]
 
