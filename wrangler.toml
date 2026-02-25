@@ -8,3 +8,5 @@ port = 8788
 [vars]
 KKPHIM_API_BASE = "https://phimapi.com"
 KKPHIM_IMG_BASE = "https://phimimg.com"
+ADDON_ID = "com.nghienphim.kkphim.pro"
+ADDON_LOGO = "https://i.ibb.co/wr4VrPrN/kkphim-logo.png"
