@@ -1,6 +1,7 @@
 import { API_BASE, IMG_BASE, GENRES, COUNTRIES, ensureMetadata } from './utils/metadata'
+import { mask } from './proxy'
 
-export async function handleCatalog(type: string, id: string, extra: string) {
+export async function handleCatalog(type: string, id: string, extra: string, origin: string) {
     await ensureMetadata()
     let searchQuery = '', genreSlug = '', countrySlug = '', year = '', skip = 0
     if (extra) {
@@ -100,6 +101,11 @@ export async function handleCatalog(type: string, id: string, extra: string) {
             let type = 'movie'
             if (item.type === 'series' || item.type === 'hoathinh' || item.type === 'tvshows') {
                 type = 'series'
+            }
+
+            if (poster) {
+                const filename = (poster.split('/').pop() || 'thumb.jpg').split('?')[0]
+                poster = `${origin}/p/i/${mask(poster)}/${filename}`
             }
 
             return {

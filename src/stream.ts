@@ -1,7 +1,9 @@
 import { API_BASE } from './utils/metadata'
 import { getSlugFromImdb } from './utils/mapping'
+import { mask } from './proxy'
+import { KKPHIM_REFERER } from './utils/key'
 
-export async function handleStream(type: string, idRaw: string) {
+export async function handleStream(type: string, idRaw: string, origin: string) {
     let slug = '', epSlug = '1'
     if (idRaw.startsWith('kkphim:')) {
         const bits = idRaw.split(':')
@@ -28,9 +30,15 @@ export async function handleStream(type: string, idRaw: string) {
 
     try {
         console.log(`[Stream] Fetching: slug=${slug}, epSlug=${epSlug}`)
-        const res = await fetch(`${API_BASE}/phim/${slug}`)
+        const res = await fetch(`${API_BASE}/phim/${slug}`, {
+            headers: {
+                'Referer': KKPHIM_REFERER,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
+            }
+        })
         const result: any = await res.json()
-        const episodes = result.episodes || []
+        // KKPhim V1 details are under result.data.item.episodes
+        const episodes = result.data?.item?.episodes || result.episodes || []
 
         const streams: any[] = []
         episodes.forEach((s: any) => {
@@ -46,7 +54,7 @@ export async function handleStream(type: string, idRaw: string) {
                 streams.push({
                     name: `KKPhim\n${s.server_name}`,
                     title: `${result.movie.name}\n${ep.name} [${result.movie.quality || 'FHD'}]`,
-                    url: ep.link_m3u8
+                    url: `${origin}/p/v/${mask(ep.link_m3u8)}/index.m3u8`
                 })
             }
         })

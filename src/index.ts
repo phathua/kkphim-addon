@@ -4,11 +4,15 @@ import { getManifest } from './manifest'
 import { handleCatalog } from './catalog'
 import { handleMeta } from './meta'
 import { handleStream } from './stream'
+import { handleProxy } from './proxy'
 
 const app = new Hono()
 app.use('*', cors())
 
 app.get('/manifest.json', async (c) => c.json(await getManifest()))
+app.get('/p/i/:hex/:file{.+}', (c) => handleProxy(c)) // Masked Proxy Image
+app.get('/p/v/:hex/:file{.+}', (c) => handleProxy(c)) // Proxy Video Segments
+app.get('/p/v/:hex', (c) => handleProxy(c))           // Proxy Master Playlist
 
 // Wildcard route to handle all Stremio resources
 app.get('/*', async (c) => {
@@ -29,7 +33,8 @@ app.get('/*', async (c) => {
         let id = idRaw.split('.json')[0]
         let extra = extraRaw.split('.json')[0]
 
-        return c.json(await handleCatalog(type, id, extra))
+        const origin = new URL(c.req.url).origin
+        return c.json(await handleCatalog(type, id, extra, origin))
     }
 
     // Meta handles
@@ -39,7 +44,8 @@ app.get('/*', async (c) => {
         let idRaw = parts.length > 1 ? parts[1] : parts[0]
         let id = idRaw.split('.json')[0]
 
-        return c.json(await handleMeta(type, id))
+        const origin = new URL(c.req.url).origin
+        return c.json(await handleMeta(type, id, origin))
     }
 
     // Stream handles
@@ -51,7 +57,8 @@ app.get('/*', async (c) => {
         let idRaw = parts[1] || ''
         let id = idRaw.split('.json')[0]
 
-        return c.json(await handleStream(type, id))
+        const origin = new URL(c.req.url).origin
+        return c.json(await handleStream(type, id, origin))
     }
 
     return c.text('Not Found', 404)
